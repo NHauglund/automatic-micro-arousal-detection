@@ -1,0 +1,8 @@
+function [wake_periods, nrem_periods, rem_periods, ma_periods] = import_state_periods(animal, daylabel, hypno_file_path)
+
+hypno_info = load(append(hypno_file_path, 'state_vector_',animal,'_',daylabel,'.mat'));
+
+wake_periods = hypno_info.state_struct.wake_periods;
+nrem_periods = hypno_info.state_struct.nrem_periods;
+rem_periods = hypno_info.state_struct.rem_periods;
+ma_periods = hypno_info.state_struct.ma_periods;
