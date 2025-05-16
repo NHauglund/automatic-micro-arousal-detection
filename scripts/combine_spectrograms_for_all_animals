@@ -1,0 +1,213 @@
+% this script collects spectrograms and power plots from all animals and save average spectrograms and creates excel files with the power traces from all animals combined. 
+
+time_segments = ["Baseline_first_half", "Baseline_second_half", "SD_first_2_hours_post_SD"];
+layers_of_interest = ["2_3", "4", "5", "6"];
+power_bands = ["delta", "theta", "sigma", "beta", "gamma"];
+MA_durations = ["zero_to_five"];
+
+opts = detectImportOptions("ChannelAssignment_CorticalAreas_20190408_copy.xlsx",VariableNamesRange="A1:H1",VariableNamingRule="preserve");
+opts.VariableTypes = repmat("string",1,numel(opts.VariableTypes));
+channel_map_file = readtable('D:\Data_copy_Lukas_20231212\CorticalAreas\MatlabScripts\MatlabTables\ChannelAssignment_CorticalAreas_20190408_copy.xlsx', opts);
+
+mouse_info_file = readtable('D:\Data_copy_Lukas_20231212\CorticalAreas\MatlabScripts\MatlabTables\animalinfo_CorticalAreas_20220705.xlsx');
+mouse_info = mouse_info_file(1:7,:);
+mousenames = mouse_info{:,1};
+mousenames_char = char(mousenames);
+
+pathin = "input_path";
+pathout = "output_path";
+
+T_F_load_file = [pathin '\time_and_frequency.mat'];
+T_F_file = load(T_F_load_file);
+spectrogram_time = T_F_file.time_and_frequency.spectrogram_time;
+trace_time = T_F_file.time_and_frequency.trace_time;
+frequency = T_F_file.time_and_frequency.frequency;
+F = frequency;
+
+
+for time_segment_index = 1:size(time_segments,2)
+    time_segment_of_interest = time_segments(time_segment_index);
+    time_segment_char =  convertStringsToChars(time_segment_of_interest);
+
+    for duration_index = 1:size(MA_durations,2)
+        MA_duration = convertStringsToChars(MA_durations(duration_index));
+
+        for power_band_index = 1:size(power_bands,2)
+            power_band_of_interest = power_bands(power_band_index);
+            power_band_char = convertStringsToChars(power_band_of_interest);
+
+            L2_3_collector = [];
+            L4_collector = [];
+            L5_collector = [];
+            L6_collector = [];
+            L2_3_spectrogram_collector = [];
+            L4_spectrogram_collector = [];
+            L5_spectrogram_collector = [];
+            L6_spectrogram_collector = [];
+            norm_L2_3_collector = [];
+            norm_L4_collector = [];
+            norm_L5_collector = [];
+            norm_L6_collector = [];
+
+            for layer_index = 1:length(layers_of_interest)
+                layer_of_interest = layers_of_interest(layer_index);
+                layer_of_interest_char = convertStringsToChars(layer_of_interest);
+
+                for mouse_index = 1:length(mousenames)
+                    mouse_id = mousenames{mouse_index};
+                    animal = char(mouse_id);
+
+                    if strcmp(mouse_id, 'ML')
+                        L2_3 = 3;
+                        L4 = 5;
+                        L5 = 8;
+                        L6 = 12;
+                    elseif strcmp(mouse_id, 'MT')
+                        L2_3 = 3;
+                        L4 = 5;
+                        L5 = 8;
+                        L6 = 12;
+                    elseif strcmp(mouse_id, 'MH')
+                        L2_3 = 4;
+                        L4 = 6;
+                        L5 = 8;
+                        L6 = 12;
+                    elseif strcmp(mouse_id, 'CA')
+                        L2_3 = 1;
+                        L4 = 3;
+                        L5 = 6;
+                        L6 = 11;
+                    elseif strcmp(mouse_id, 'MS')
+                        L2_3 = 1;
+                        L4 = 4;
+                        L5 = 6;
+                        L6 = 11;
+                    elseif strcmp(mouse_id, 'Fa')
+                        L2_3 = 2;
+                        L4 = 4;
+                        L5 = 7;
+                        L6 = 12;
+                    elseif strcmp(mouse_id, 'Sp')
+                        L2_3 = 1;
+                        L4 = 3;
+                        L5 = 6;
+                        L6 = 10;
+                    end
+
+                    spectrogram_time_limit = 5;  %first 5 seconds are used to normalize the plot
+                    [~,closestIndex] = min(abs(spectrogram_time-spectrogram_time_limit));
+
+                    if strcmp(layer_of_interest, "2_3")
+                        spectrogram_cache_file = [pathin '\spectrogram_',animal,'_',time_segment_char,'_channel_',int2str(L2_3),'_ma_duration_',MA_duration,'.mat'];
+                        spectrogram_file = load(spectrogram_cache_file);
+                        L2_3_spectrogram_collector = cat(3, L2_3_spectrogram_collector, spectrogram_file.channel_mean_spectrogram);
+                        power_band_cache_file = [pathin '\',power_band_char,'_',animal,'_',time_segment_char,'_channel_',int2str(L2_3),'_ma_duration_',MA_duration,'.mat'];
+                        power_band_file = load(power_band_cache_file);
+                        file_name = fieldnames(load(power_band_cache_file));
+                        power_trace = getfield(power_band_file, file_name{1});
+                        same_start_power_trace = ((power_trace - mean(power_trace(1:closestIndex)))/mean(power_trace(1:closestIndex)))*100;
+                        L2_3_collector = [L2_3_collector, same_start_power_trace'];
+                    elseif strcmp(layer_of_interest, "4")
+                        spectrogram_cache_file = [pathin '\spectrogram_',animal,'_',time_segment_char,'_channel_',int2str(L4),'_ma_duration_',MA_duration,'.mat'];
+                        spectrogram_file = load(spectrogram_cache_file);
+                        L4_spectrogram_collector = cat(3, L4_spectrogram_collector, spectrogram_file.channel_mean_spectrogram);
+                        power_band_cache_file = [pathin '\',power_band_char,'_',animal,'_',time_segment_char,'_channel_',int2str(L4),'_ma_duration_',MA_duration,'.mat'];
+                        power_band_file = load(power_band_cache_file);
+                        file_name = fieldnames(load(power_band_cache_file));
+                        power_trace = getfield(power_band_file, file_name{1});
+                        trace_start = mean(power_trace(1:find(spectrogram_time==spectrogram_time_limit)));
+                        same_start_power_trace = ((power_trace - mean(power_trace(1:closestIndex)))/mean(power_trace(1:closestIndex)))*100;
+                        L4_collector = [L4_collector, same_start_power_trace'];
+                    elseif strcmp(layer_of_interest, "5")
+                        spectrogram_cache_file = [pathin '\spectrogram_',animal,'_',time_segment_char,'_channel_',int2str(L5),'_ma_duration_',MA_duration,'.mat'];
+                        spectrogram_file = load(spectrogram_cache_file);
+                        L5_spectrogram_collector = cat(3, L5_spectrogram_collector, spectrogram_file.channel_mean_spectrogram);
+                        power_band_cache_file = [pathin '\',power_band_char,'_',animal,'_',time_segment_char,'_channel_',int2str(L5),'_ma_duration_',MA_duration,'.mat'];
+                        power_band_file = load(power_band_cache_file);
+                        file_name = fieldnames(load(power_band_cache_file));
+                        power_trace = getfield(power_band_file, file_name{1});
+                        trace_start = mean(power_trace(1:find(spectrogram_time==spectrogram_time_limit)));
+                        same_start_power_trace = ((power_trace - mean(power_trace(1:closestIndex)))/mean(power_trace(1:closestIndex)))*100;
+                        L5_collector = [L5_collector, same_start_power_trace'];
+                    elseif strcmp(layer_of_interest, "6")
+                        spectrogram_cache_file = [pathin '\spectrogram_',animal,'_',time_segment_char,'_channel_',int2str(L6),'_ma_duration_',MA_duration,'.mat'];
+                        spectrogram_file = load(spectrogram_cache_file);
+                        L6_spectrogram_collector = cat(3, L6_spectrogram_collector, spectrogram_file.channel_mean_spectrogram);
+                        power_band_cache_file = [pathin '\',power_band_char,'_',animal,'_',time_segment_char,'_channel_',int2str(L6),'_ma_duration_',MA_duration,'.mat'];
+                        power_band_file = load(power_band_cache_file);
+                        file_name = fieldnames(load(power_band_cache_file));
+                        power_trace = getfield(power_band_file, file_name{1});
+                        trace_start = mean(power_trace(1:find(spectrogram_time==spectrogram_time_limit)));
+                        same_start_power_trace = ((power_trace - mean(power_trace(1:closestIndex)))/mean(power_trace(1:closestIndex)))*100;
+                        L6_collector = [L6_collector, same_start_power_trace'];
+                    end
+
+                end
+
+                excel_headers = ["time", "ML", "MT", "MH", "CA", "MS", "Fa", "Sp"];
+
+            end
+
+            duration_of_trace = T_F_file.time_and_frequency.trace_time(end);
+
+            mean_L2_3_spectrograms = mean(L2_3_spectrogram_collector, 3);
+            mean_L4_spectrograms = mean(L4_spectrogram_collector, 3);
+            mean_L5_spectrograms = mean(L5_spectrogram_collector, 3);
+            mean_L6_spectrograms = mean(L6_spectrogram_collector, 3);
+
+            trace_time_corrected = trace_time - trace_time(end)/2;
+            spectrogram_time_corrected = spectrogram_time - (spectrogram_time(end)/2);
+
+
+            L2_3_excel_file = [excel_headers; spectrogram_time', L2_3_collector];
+            L2_3_excel_name = [pathout '\',power_band_char,'_',time_segment_char,'_MA_duration_', MA_duration,'_L2_3_norm_start.xlsx'];
+            writematrix(L2_3_excel_file, L2_3_excel_name);
+
+            L4_excel_file = [excel_headers; spectrogram_time', L4_collector];
+            L4_excel_name = [pathout '\',power_band_char,'_',time_segment_char,'_MA_duration_', MA_duration,'_L4_norm_start.xlsx'];
+            writematrix(L4_excel_file, L4_excel_name);
+
+            L5_excel_file = [excel_headers; spectrogram_time', L5_collector];
+            L5_excel_name = [pathout '\',power_band_char,'_',time_segment_char,'_MA_duration_', MA_duration,'_L5_norm_start.xlsx'];
+            writematrix(L5_excel_file, L5_excel_name);
+
+            L6_excel_file = [excel_headers; spectrogram_time', L6_collector];
+            L6_excel_name = [pathout '\',power_band_char,'_',time_segment_char,'_MA_duration_', MA_duration,'_L6_norm_start.xlsx'];
+            writematrix(L6_excel_file, L6_excel_name);
+
+        end
+
+        lower_c = 800;
+        higher_c = 8700;
+
+        figure,
+        % filtered_mean_spectrogram = imgaussfilt(channel_mean_spectrogram, 1);
+        imagesc(spectrogram_time_corrected, F, mean_L5_spectrograms); %plot the log spectrum
+        set(gca,'YDir', 'normal'); % flip the Y Axis so lower frequencies are at the bottom
+        ylim([0, 20]);
+        h = colorbar;
+        clim([lower_c, higher_c])
+        set(gca,'YDir', 'normal'); % flip the Y Axis so lower frequencies are at the bottom
+        colormap(gca, 'plasma');
+        sgtitle(["layer 5 ", MA_duration, " ", time_segment_char])
+        drawnow
+
+
+        save_spectrogram_name = [pathout '\spectrogram_',convertStringsToChars(time_segment_of_interest),'_MA_duration_', MA_duration,'_L2_3.mat'];
+        save(save_spectrogram_name, 'mean_L2_3_spectrograms');
+
+        save_spectrogram_name = [pathout '\spectrogram_',convertStringsToChars(time_segment_of_interest),'_MA_duration_', MA_duration,'_L4_.mat'];
+        save(save_spectrogram_name, 'mean_L4_spectrograms');
+
+        save_spectrogram_name = [pathout '\spectrogram_',convertStringsToChars(time_segment_of_interest),'_MA_duration_', MA_duration,'_L5_.mat'];
+        save(save_spectrogram_name, 'mean_L5_spectrograms');
+
+        save_spectrogram_name = [pathout '\spectrogram_',convertStringsToChars(time_segment_of_interest),'_MA_duration_', MA_duration,'_L6_.mat'];
+        save(save_spectrogram_name, 'mean_L6_spectrograms');
+
+
+    end
+
+end
+
+
