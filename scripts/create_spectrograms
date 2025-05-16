@@ -1,0 +1,315 @@
+
+% This script generates and plots spectrograms and power bands for LFP traces in different cortical
+% layers during the specified time bins (first half of the light phase during baseline, rest
+% of the baseline, or first 4 hours of recovery sleep after sleep deprivation.
+
+% inputs:
+%  - vigilance state info from the matlab struct "VigilancestateTimecourseAnim.mat"
+%  - channel and layer info from the "ChannelAssignment_L5_20200701_copy.xlsx" sheet
+%  - processed LFP data saved as either 12 or 24 hour files
+%  - excel sheet with animals that have good LFP ("animals_with_LFP.xlsx")
+
+% outputs:
+%  .mat files with the spectrogram, slow (< 0.5 Hz), delta, theta, sigma and
+%  beta power, and a file called T_F.mat with T and F for the spectrogams.
+%  Each file is the average of alle micro-arousals for a specific mouse,
+%  layer and time period
+
+% Functions needed:
+%  - process_LFP_cortex.m
+%  - basic_filt.m
+%  - detect_microarousals_from_emg_duration.m
+%  - import_state_periods.m
+%  - find_power_trace
+
+
+%%
+
+time_segments = ["Baseline_first_half", "Baseline_second_half", "SD_first_2_hours_post_SD"];%
+% time_segments = ["Baseline_first_half", "Baseline_second_half"];
+% time_segments = ["Baseline"];         % "Baseline", "Baseline_first_half", "Baseline_second_half"
+transition_of_interest = ["ma"];    %"wake", "sws", "rem", "ma"
+channels_of_interest = 1:16;
+% channels_of_interest = [15:16];
+% MA_durations = ["zero_to_three", "five_to_ten"];
+MA_durations = ["zero_to_five"];
+
+% time_segments is the segments of the recording that should be compared. Here the baseline recording
+% is divided into the first 4 hours and the rest of lights on, whereas the SD
+% recording is the first 4 hours after sleep deprivation.
+
+mouse_info_file = readtable('Z:\Users\Natalie_Hauglund\001.Projects\001.Project_LFP_MA_analysis\MatlabTables\animalinfo_CorticalAreas_20220705.xlsx');
+mouse_info = mouse_info_file(1:7,:);
+opts = detectImportOptions("ChannelAssignment_CorticalAreas_20190408_copy.xlsx",VariableNamesRange="A1:H1",VariableNamingRule="preserve");
+opts.VariableTypes = repmat("string",1,numel(opts.VariableTypes));
+channel_map_file = readtable('Z:\Users\Natalie_Hauglund\001.Projects\001.Project_LFP_MA_analysis\MatlabTables\ChannelAssignment_CorticalAreas_20190408_copy.xlsx', opts);
+hypno_file_path = 'D:\Data_copy_Lukas_20231212\CorticalAreas\Output_state_vectors\';    % path to the folder where state vector structs are saved
+LFP_file_path_24 = 'D:\Data_copy_Lukas_20231212\CorticalAreas\OutputSignals24h\';    % path to the folder where 24h LFP data is saved
+LFP_file_path_12 = 'D:\Data_copy_Lukas_20231212\CorticalAreas\OutputSignals12h\';    % path to the folder where 12h LFP data is saved
+
+pathout = 'Z:\Users\Natalie_Hauglund\001.Projects\001.Project_LFP_MA_analysis\CorticalAreas\Output_MA_analysis\spectrogram_layers\spectrogram_LFP_diff_duration_MA';
+
+
+arousal_window_size = 50;   % number of seconds before and after the MA in seconds on the plot
+sampling_frq = 256;
+power_bands = {[1, 4], [4, 10], [12, 16], [16, 30], [60 80]};
+mousenames = mouse_info{:,1};
+
+%loop through all animals in this category
+for n=1:size(mousenames,1)
+    animal=mousenames{n};
+
+    disp([animal ' is being proccessed, please be patient :-)'])
+
+    for duration_index = 1:size(MA_durations,2)
+        MA_duration = convertStringsToChars(MA_durations(duration_index));
+
+        for time_segment_index = 1:size(time_segments,2)
+            time_segment_of_interest = time_segments(time_segment_index);
+            time_segment_char = convertStringsToChars(time_segment_of_interest);
+
+            if strcmp(time_segment_of_interest, "Baseline") || strcmp(time_segment_of_interest, "SD_control")  || strcmp(time_segment_of_interest, "Baseline_first_half") || strcmp(time_segment_of_interest, "Baseline_second_half")
+                timelabel = 'BL';
+            elseif strcmp(time_segment_of_interest, "SD_first_2_hours_post_SD")
+                timelabel = 'SD';
+            end
+
+            if strcmp(time_segment_of_interest, "SD_first_2_hours_post_SD") || strcmp(time_segment_of_interest, "Baseline_first_half")
+                % create struct with LFP traces for each channel from the mouse of interest
+                [LFP_data, animal_EEG, animal_EMG] = process_LFP_cortex(animal, timelabel, LFP_file_path_24, LFP_file_path_12);
+                disp("LFP traces imported")
+
+                % filter LFP signal
+                [LFP_data, animal_EMG_filt] = basic_filt(LFP_data, animal_EMG);
+                disp("LFP traces filtered")
+
+                % Detect micro-arousals
+                [nrem_emg_onset_sec, nrem_emg_duration_sec, nrem_no_ma_periods] = detect_microarousals_from_emg_duration(animal, animal_EEG, animal_EMG, timelabel, hypno_file_path);
+                state_onsets = nrem_emg_onset_sec;
+                disp("micro-arousals detected")
+            end
+
+            channel_mean_spectrogram = [];
+            channel_mean_delta = [];
+            channel_mean_theta = [];
+            channel_mean_sigma = [];
+            channel_mean_beta = [];
+
+
+            for trace_index = 1:size(channels_of_interest,2)
+                channel_of_interest = channels_of_interest(trace_index);
+                data_of_interest = LFP_data.traces_filt(:,find(LFP_data.channels == ['LFP_channel_', int2str(channels_of_interest(trace_index))]));
+
+                band_power_collector = [];
+                ma_delta_collector = [];
+                ma_theta_collector = [];
+                ma_sigma_collector = [];
+                ma_beta_collector = [];
+                ma_gamma_collector = [];
+                mean_ma_spectrogram_collector = [];
+
+                ma_spectrogram_collector = [];
+                ma_emg_collector = [];
+                ma_traces = [];
+
+                for state_onset_index=1:length(state_onsets)
+                    arousal_onset = state_onsets(state_onset_index);
+
+                    if isnan(arousal_onset)
+                        continue
+                    end
+
+                    arousal_onset_index_EEG_frames = sampling_frq * arousal_onset;
+                    index_window_EEG_frames = floor(sampling_frq * arousal_window_size);
+                    from_index_EEG_frames = floor(arousal_onset_index_EEG_frames-index_window_EEG_frames);
+                    to_index_EEG_frames = from_index_EEG_frames + index_window_EEG_frames*2;
+
+                    if from_index_EEG_frames < 1 || to_index_EEG_frames > length(data_of_interest)
+                        continue
+                    end
+
+                    if from_index_EEG_frames < arousal_window_size*sampling_frq || to_index_EEG_frames > length(data_of_interest)-arousal_window_size*sampling_frq
+                        continue
+                    end
+
+                    if state_onset_index == length(state_onsets)
+                        continue
+                    end
+
+                    if state_onset_index == 1
+                        continue
+                    end
+
+                    if strcmp(transition_of_interest, "ma")
+                        if strcmp(MA_duration, 'zero_to_three')
+                            if nrem_emg_duration_sec(state_onset_index) < 0
+                                continue
+                            end
+                            if nrem_emg_duration_sec(state_onset_index) > 3
+                                continue
+                            end
+                        elseif strcmp(MA_duration, 'five_to_ten')
+                            if nrem_emg_duration_sec(state_onset_index) < 5
+                                continue
+                            end
+                            if nrem_emg_duration_sec(state_onset_index) > 10
+                                continue
+                            end
+                        elseif strcmp(MA_duration, 'zero_to_five')
+                            if nrem_emg_duration_sec(state_onset_index) < 0
+                                continue
+                            end
+                            if nrem_emg_duration_sec(state_onset_index) > 5
+                                continue
+                            end
+                        end
+                    end
+
+                    if strcmp(time_segment_of_interest, "BL_first_4_hours_lightsOn") == 1
+                        if from_index_EEG_frames > 4 * 60 * 60 * sampling_frq || to_index_EEG_frames > 4 * 60 * 60 * sampling_frq
+                            continue
+                        end
+                    elseif strcmp(time_segment_of_interest, "BL_rest_of_lightsOn") == 1
+                        if from_index_EEG_frames < 4 * 60 * 60 * sampling_frq || to_index_EEG_frames < 4 * 60 * 60 * sampling_frq
+                            continue
+                        end
+                        if from_index_EEG_frames > 12 * 60 * 60 * sampling_frq || to_index_EEG_frames > 12 * 60 * 60 * sampling_frq
+                            continue
+                        end
+                    elseif strcmp(time_segment_of_interest, "BL_last_2_hours_lightsOn") == 1
+                        if from_index_EEG_frames < (12-2) * 60 * 60 * sampling_frq || to_index_EEG_frames < (12-2) * 60 * 60 * sampling_frq
+                            continue
+                        end
+                        if from_index_EEG_frames > 12 * 60 * 60 * sampling_frq || to_index_EEG_frames > 12 * 60 * 60 * sampling_frq
+                            continue
+                        end
+                    elseif strcmp(time_segment_of_interest, "Baseline") == 1
+                        if to_index_EEG_frames > 24 * 60 * 60 * sampling_frq
+                            continue
+                        end
+                    elseif strcmp(time_segment_of_interest, "Baseline_first_half") == 1
+                        if from_index_EEG_frames > 6 * 60 * 60 * sampling_frq || to_index_EEG_frames > 6 * 60 * 60 * sampling_frq
+                            continue
+                        end
+                    elseif strcmp(time_segment_of_interest, "Baseline_second_half" ) == 1
+                        if from_index_EEG_frames < 6 * 60 * 60 * sampling_frq || to_index_EEG_frames < 6 * 60 * 60 * sampling_frq
+                            continue
+                        end
+                        if from_index_EEG_frames > 12 * 60 * 60 * sampling_frq || to_index_EEG_frames > 12 * 60 * 60 * sampling_frq
+                            continue
+                        end
+                    elseif strcmp(time_segment_of_interest, "SD_control") == 1
+                        if from_index_EEG_frames < 6 * 60 * 60 * sampling_frq || to_index_EEG_frames < 6 * 60 * 60 * sampling_frq
+                            continue
+                        end
+                        if from_index_EEG_frames > (6+2) * 60 * 60 * sampling_frq || to_index_EEG_frames > (6+2) * 60 * 60 * sampling_frq
+                            continue
+                        end
+                    elseif strcmp(time_segment_of_interest, "SD_first_2_hours_post_SD") == 1
+                        if from_index_EEG_frames < 6 * 60 * 60 * sampling_frq || to_index_EEG_frames < 6 * 60 * 60 * sampling_frq
+                            continue
+                        end
+                        if from_index_EEG_frames > (6+2) * 60 * 60 * sampling_frq || to_index_EEG_frames > (6+2) * 60 * 60 * sampling_frq
+                            continue
+                        end
+                    end
+
+
+                    % make collector of microarousals
+                    ma_trace = data_of_interest(from_index_EEG_frames:to_index_EEG_frames);
+                    emg_trace = animal_EMG((from_index_EEG_frames):(to_index_EEG_frames));
+                    ma_traces = [ma_traces, arousal_onset];
+
+                    duration_of_trace = round((length(ma_trace)/sampling_frq));  %duration of ma signal in seconds
+                    window = round(0.5*sampling_frq);
+                    overlap = 0;  %round(0.05*sampling_frq);
+                    frw = 0:0.02:80;
+
+                    % Calculate pburg spectrogram
+                    [transition_spectrogram, F, T] = spectrogram(ma_trace,window,overlap,frw,sampling_frq,'yaxis');
+
+                    % Calculate band power
+                    [band_power_collector] = find_power_trace(transition_spectrogram, power_bands, F);
+                    ma_delta_collector = [ma_delta_collector; band_power_collector(1,:)];
+                    ma_theta_collector = [ma_theta_collector; band_power_collector(2,:)];
+                    ma_sigma_collector = [ma_sigma_collector; band_power_collector(3,:)];
+                    ma_beta_collector = [ma_beta_collector; band_power_collector(4,:)];
+                    ma_gamma_collector = [ma_gamma_collector; band_power_collector(5,:)];
+
+                    ma_spectrogram_collector = cat(3, ma_spectrogram_collector, transition_spectrogram);    % collects spectrograms for each ma for a specific channel from a specific mouse
+                    ma_emg_collector = [ma_emg_collector; emg_trace];
+
+                end
+
+                mean_ma_spectrogram = mean(abs(ma_spectrogram_collector), 3);    % takes the mean of the spectrogram for each ma
+
+                mean_ma_spectrogram_collector = cat(3, mean_ma_spectrogram_collector, mean_ma_spectrogram);
+
+                channel_mean_spectrogram = mean(mean_ma_spectrogram_collector, 3);
+                channel_mean_delta = mean(ma_delta_collector,1);
+                channel_mean_theta = mean(ma_theta_collector,1);
+                channel_mean_sigma = mean(ma_sigma_collector,1);
+                channel_mean_beta = mean(ma_beta_collector,1);
+                channel_mean_gamma = mean(ma_gamma_collector,1);
+
+
+                trace_time = (1:length(emg_trace))./sampling_frq;
+                power_band_time_frequency = size(band_power_collector(1,:),2)./duration_of_trace;
+                power_band_time = (1:size(band_power_collector(1,:),2))./power_band_time_frequency;
+
+                spectrogram_time = T-arousal_window_size;
+
+                if channel_of_interest == 8
+                    trace_time = (1:length(animal_EMG((from_index_EEG_frames):(to_index_EEG_frames))))./sampling_frq;
+                    figure,
+                    subplot(3,1,1)
+                    plot(power_band_time,channel_mean_delta)
+                    subplot(3,1,2)
+                    plot(power_band_time, channel_mean_theta)
+                    subplot(3,1,3)
+                    % filtered_mean_spectrogram = imgaussfilt(channel_mean_spectrogram, 1);
+                    imagesc(spectrogram_time, F, channel_mean_spectrogram); %plot the log spectrum
+                    set(gca,'YDir', 'normal'); % flip the Y Axis so lower frequencies are at the bottom
+                    ylim([0, 20]);
+                    % h = colorbar;
+                    clim([500, 7800])
+                    colormap(gca, 'plasma');
+                    set(gca,'YDir', 'normal'); % flip the Y Axis so lower frequencies are at the bottom
+                    colormap(gca, 'plasma');
+                    sgtitle(["channel ", int2str(channel_of_interest), " ", MA_duration, " ", time_segment_char])
+                    drawnow
+                end
+
+                save_spectrogram_name = [pathout '\spectrogram_',animal,'_',time_segment_char,'_channel_',int2str(channel_of_interest),'_ma_duration_',MA_duration,'.mat'];
+                save_delta_name = [pathout '\delta_',animal,'_',time_segment_char,'_channel_',int2str(channel_of_interest),'_ma_duration_',MA_duration,'.mat'];
+                save_theta_name = [pathout '\theta_',animal,'_',time_segment_char,'_channel_',int2str(channel_of_interest),'_ma_duration_',MA_duration,'.mat'];
+                save_sigma_name = [pathout '\sigma_',animal,'_',time_segment_char,'_channel_',int2str(channel_of_interest),'_ma_duration_',MA_duration,'.mat'];
+                save_beta_name = [pathout '\beta_',animal,'_',time_segment_char,'_channel_',int2str(channel_of_interest),'_ma_duration_',MA_duration,'.mat'];
+                save_gamma_name = [pathout '\gamma_',animal,'_',time_segment_char,'_channel_',int2str(channel_of_interest),'_ma_duration_',MA_duration,'.mat'];
+                save_T_F = [pathout '\time_and_frequency.mat'];
+
+                save(save_spectrogram_name, 'channel_mean_spectrogram');
+                save(save_delta_name, 'channel_mean_delta');
+                save(save_theta_name, 'channel_mean_theta');
+                save(save_sigma_name, 'channel_mean_sigma');
+                save(save_beta_name, 'channel_mean_beta');
+                save(save_gamma_name, 'channel_mean_gamma');
+
+
+            end
+
+            time_and_frequency.spectrogram_time = power_band_time;
+            time_and_frequency.trace_time = trace_time;
+            time_and_frequency.frequency = F;
+            save(save_T_F, 'time_and_frequency');
+            ma_number = size(ma_traces,2);
+            ma_number_name = [pathout '\ma_number_',animal,'_',time_segment_char,'.mat'];
+            save(ma_number_name, 'ma_number');
+
+        end
+
+    end
+
+end
+
+
