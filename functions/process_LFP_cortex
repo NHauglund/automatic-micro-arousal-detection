@@ -1,0 +1,114 @@
+function [LFP_data, animal_EEG_trace_conv, animal_EMG_trace_conv] = process_LFP_cortex(animal, timelabel, LFP_file_path_24, LFP_file_path_12)
+%%
+% process_LFP is a function that loads all LFP channels of the selected
+% animal and generates a struct called "LFP_data" containing the name of
+% each channel files that contains the LFP signal, the file paths to each
+% of the data files, the name of each LFP channel, the raw LFP signals and
+% the convolved signals where slow fluctuations have been removed using
+% convolve. The last part of the code loads and generates a convolved
+% version of the EEG signal for the selected animal.
+
+% The input arguments are:
+%   animal: the initials that encodes the animal of interest (e.g. Ya). This
+%   should correspond to the initials used for saving the raw traces.
+%   LFP_file_path: the path where the data traces are stored
+
+
+if strcmp(animal, 'Ba') || strcmp(animal,'Gi')
+    data_file_paths = dir(LFP_file_path_12);
+else
+    data_file_paths = dir(LFP_file_path_24);
+end
+
+[~, ~, allmousedetails]=xlsread('animalinfo_CorticalAreas_20220705.xlsx','Summary','A2:AD8');
+file_names = {data_file_paths.name};
+mousenames = allmousedetails(:,1);
+
+
+for name_index = 1:length(mousenames)
+    name_of_interest = mousenames(name_index);
+    name_of_interest = char(name_of_interest);
+
+    if animal == name_of_interest
+        if strcmp(timelabel, 'BL')
+            BLdate=allmousedetails(name_index,4);
+        elseif strcmp(timelabel, 'SD')
+            BLdate=allmousedetails(name_index,5);
+        end
+    end
+end
+
+LFP_file_contain = append(animal, "-LFP-", string(BLdate));
+
+LFP_channel_array = ["LFP_channel_1", "LFP_channel_10", "LFP_channel_11", "LFP_channel_12", "LFP_channel_13",...
+    "LFP_channel_14", "LFP_channel_15", "LFP_channel_16", "LFP_channel_2", "LFP_channel_3", "LFP_channel_4", "LFP_channel_5", "LFP_channel_6",...
+    "LFP_channel_7", "LFP_channel_8", "LFP_channel_9"];
+
+animal_EEG_info = load(append(LFP_file_path_24, animal,'-EEG-',string(BLdate),'-ch1.mat'));
+if strcmp(animal, "CA") || strcmp(animal, "MS") || strcmp(animal, "Sp")
+    animal_EMG_info = load(append(LFP_file_path_24, animal,'-EMG-',string(BLdate),'-ch1.mat'));
+else
+    animal_EMG_info = load(append(LFP_file_path_24, animal,'-EEG-',string(BLdate),'-ch4.mat'));
+end
+
+file_names_of_interest = [];
+file_paths_of_interest = [];
+trace_of_interest = [];
+lowpass_trace_of_interest = [];
+
+for file_index = 1:length(file_names)
+    file_in_question = file_names{file_index};
+    if contains(file_in_question, convertStringsToChars(LFP_file_contain)) == 1
+        file_names_of_interest = [file_names_of_interest, {data_file_paths(file_index).name}];
+        file_path_of_interest = fullfile({data_file_paths(file_index).folder},{data_file_paths(file_index).name});
+        file_path_of_interest_char = convertStringsToChars(string(file_path_of_interest));
+        file_paths_of_interest = [file_paths_of_interest, file_path_of_interest];
+        animal_LFP_info = load(file_path_of_interest_char);
+%         animal_LFP_trace_lowpass = animal_LFP_info.sig-lowpass(animal_LFP_info.sig, 0.01, sampling_frq);
+        baselineY = sgolayfilt(animal_LFP_info.sig, 3, 1001);
+        animal_LFP_trace_lowpass = animal_LFP_info.sig - baselineY;
+        lowpass_trace_of_interest = [lowpass_trace_of_interest; animal_LFP_trace_lowpass];
+    end
+end
+
+
+
+LFP_data.names = file_names_of_interest;
+LFP_data.paths = file_paths_of_interest;
+LFP_data.channels = LFP_channel_array;
+LFP_data.traces = lowpass_trace_of_interest';
+
+% load EEG data
+animal_EEG = animal_EEG_info.sig;
+animal_EMG = animal_EMG_info.sig;
+
+animal_EMG_short = animal_EMG;
+animal_EEG_short = animal_EEG;
+
+for eeg_index = 1:length(animal_EEG)
+    EEG_bin = animal_EEG(eeg_index);
+    if eeg_index == length(animal_EEG)
+        continue
+    end
+    if EEG_bin + animal_EEG(eeg_index+1) == EEG_bin && EEG_bin + animal_EEG(eeg_index+1) > 0
+        animal_EMG_short = animal_EMG(1:eeg_index);
+        animal_EEG_short = animal_EEG(1:eeg_index);
+        LFP_data.traces = LFP_data.traces(1:eeg_index,:);
+        break
+    end
+    break
+end
+
+animal_EEG_trace_conv = animal_EEG_short-conv(animal_EEG_short, ones(10000, 1)/10000, 'same');
+animal_EMG_trace_conv = animal_EMG_short-conv(animal_EMG_short, ones(10000, 1)/10000, 'same');
+
+
+
+end
+
+
+
+
+
+
+
