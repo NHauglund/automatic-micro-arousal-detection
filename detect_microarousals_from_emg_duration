@@ -1,0 +1,252 @@
+function [nrem_emg_onset_sec_cut_cut_cut, nrem_emg_durations_sec_cut_cut_cut, nrem_no_ma_periods] = detect_microarousals_from_emg_duration(animal_char, animal_EEG, animal_EMG, timelabel, hypno_file_path)
+%%
+sampling_frq = 256;
+window = round(4*sampling_frq);
+overlap = round(0.5*sampling_frq);
+power_bands = {[1, 4], [4, 10], [12, 16], [16, 30]};
+
+% import hypnograms
+[wake_binary, nrem_binary, rem_binary] = import_state_vectors_wheel(animal_char, timelabel, hypno_file_path);
+disp("states vectors imported")
+
+%create nrem binary vector that includes ma_binary
+if exist('ma_binary', 'var') == 1
+    new_nrem_binary = [];
+    for bin_index = 1:size(nrem_binary,2)
+        if nrem_binary(bin_index) == 1 || ma_binary(bin_index) == 1
+            new_nrem_binary = [new_nrem_binary, 1];
+        else
+            new_nrem_binary = [new_nrem_binary, 0];
+        end
+    end
+    nrem_binary = new_nrem_binary;
+end
+
+%Make nrem binary_vector that allows intruding states of up to 10 seconds
+sec_intruding_state = 11;
+state = abs(1-nrem_binary);
+SE = ones(sec_intruding_state,1)';
+state_filled = imclose(nrem_binary,SE);
+% sws_binary_vector_no_ma = abs(1-state_filled);
+nrem_binary_no_ma = state_filled;
+
+% import vectors with state periods
+[wake_periods, nrem_periods, rem_periods] = import_state_periods_no_ma(animal_char, timelabel, hypno_file_path);
+
+% Make sws_periods vector allowing wakefulness of up to 10 seconds
+sws_no_ma_onset_vector = [];
+sws_no_ma_offset_vector = [];
+for no_ma_sws = 1:length(nrem_binary_no_ma)-1
+    state_index = nrem_binary_no_ma(no_ma_sws);
+    if no_ma_sws == 1 && nrem_binary_no_ma(1) == 1
+        sws_no_ma_onset_vector = [sws_no_ma_onset_vector, no_ma_sws*4];
+    elseif nrem_binary_no_ma(no_ma_sws+1) - state_index == 1
+        sws_no_ma_onset_vector = [sws_no_ma_onset_vector, no_ma_sws*4];
+    elseif nrem_binary_no_ma(no_ma_sws+1) - state_index == -1
+        sws_no_ma_offset_vector = [sws_no_ma_offset_vector, no_ma_sws*4];
+    end
+end
+
+if nrem_binary_no_ma(length(nrem_binary_no_ma)) == 1
+    sws_no_ma_offset_vector = [sws_no_ma_offset_vector, nrem_periods(length(nrem_periods),2)];
+end
+
+nrem_no_ma_onset_vector_turned = sws_no_ma_onset_vector';
+nrem_no_ma_offset_vector_turned = sws_no_ma_offset_vector';
+nrem_no_ma_periods = [nrem_no_ma_onset_vector_turned, nrem_no_ma_offset_vector_turned];
+nrem_no_ma_durations = nrem_no_ma_periods(:,2)-nrem_no_ma_periods(:,1);
+nrem_no_ma_periods_long = nrem_no_ma_periods(nrem_no_ma_durations > 10,:);  % removing NREM bouts with a duration of less than 20 seconds
+
+
+% make convoluted EMG signal
+animal_EMG_movstd = movstd(animal_EMG,512);
+animal_EMG_std = movmean(animal_EMG_movstd,512);
+corected_animal_EMG_std = animal_EMG_std - medfilt1(animal_EMG_std,10000);
+
+% find signal pulse
+std_collector = [];
+for nrem_index = 1:size(nrem_no_ma_periods,1)
+    nrem_period_of_interest = nrem_no_ma_periods(nrem_index,:);
+    if nrem_period_of_interest(2)*sampling_frq < length(corected_animal_EMG_std)
+    std_collector = [std_collector, std(corected_animal_EMG_std(nrem_period_of_interest(1)*sampling_frq:nrem_period_of_interest(2)*sampling_frq))];
+    else
+        std_collector = [std_collector, std(corected_animal_EMG_std(nrem_period_of_interest(1)*sampling_frq:end))];
+    end
+end
+mean_std = median(std_collector);
+emg_threshold = mean_std*2;
+signal_diff = find(diff(corected_animal_EMG_std>emg_threshold));
+
+emg_onset = signal_diff(1:2:end);
+emg_offset = signal_diff(2:2:end);
+
+
+if size(emg_onset,2) > size(emg_offset,2)
+    emg_onset = emg_onset(1:size(emg_offset,2));
+end
+emg_onset_sec = emg_onset/sampling_frq;
+emg_offset_sec = emg_offset/sampling_frq;
+
+% make vector of emg activity during NREM periods
+nrem_emg_onset_sec = [];
+nrem_emg_offset_sec = [];
+for emg_index = 1:length(emg_onset_sec)
+    emg_onset_of_interest = emg_onset_sec(emg_index);
+    for nrem_index = 1:length(nrem_no_ma_periods)
+        nrem_period_of_interest = nrem_no_ma_periods(nrem_index,:);
+        if emg_onset_of_interest > nrem_period_of_interest(1) && emg_onset_of_interest < nrem_period_of_interest(2)
+            nrem_emg_onset_sec = [nrem_emg_onset_sec, emg_onset_of_interest];
+            nrem_emg_offset_sec = [nrem_emg_offset_sec, emg_offset_sec(emg_index)];
+        elseif emg_onset_of_interest < nrem_period_of_interest(1) && emg_offset_sec(emg_index) > nrem_period_of_interest(1)  && emg_offset_sec(emg_index) < nrem_period_of_interest(2)  % To include MAs where the offsets and onsets might be shifted which will be accounted for later
+            nrem_emg_onset_sec = [nrem_emg_onset_sec, emg_onset_of_interest];
+            nrem_emg_offset_sec = [nrem_emg_offset_sec, emg_offset_sec(emg_index)];
+        end
+    end
+end
+
+if length(nrem_emg_onset_sec) < length(nrem_emg_offset_sec) 
+    nrem_emg_offset_sec = nrem_emg_offset_sec(1:length(nrem_emg_onset_sec));
+elseif length(nrem_emg_onset_sec) > length(nrem_emg_offset_sec) 
+    nrem_emg_offset_sec = nrem_emg_onset_sec(1:length(nrem_emg_offset_sec));
+end
+
+
+nrem_emg_duration = nrem_emg_offset_sec - nrem_emg_onset_sec;
+if mean(nrem_emg_duration) > 50 
+    nrem_emg_onset_sec_corrected = nrem_emg_offset_sec(1:end-1);
+    nrem_emg_offset_sec_corrected = nrem_emg_onset_sec(2:end);
+else
+    nrem_emg_onset_sec_corrected = nrem_emg_onset_sec;
+    nrem_emg_offset_sec_corrected = nrem_emg_offset_sec;
+end
+
+
+% combine emg events that are less than sec apart
+nrem_emg_onset_sec_comb = [];
+nrem_emg_offset_sec_comb = [];
+for comb_emg_index = 1:length(nrem_emg_onset_sec_corrected)
+    emg_onset_of_interest = nrem_emg_onset_sec_corrected(comb_emg_index);
+    if comb_emg_index == length(nrem_emg_onset_sec_corrected)
+        continue
+    end
+
+    if comb_emg_index > 1
+        if nrem_emg_offset_sec_corrected(comb_emg_index) - nrem_emg_onset_sec_corrected(comb_emg_index-1) < 10
+            continue
+        end
+
+        if nrem_emg_offset_sec_corrected(comb_emg_index+1) - emg_onset_of_interest > 10
+            nrem_emg_onset_sec_comb = [nrem_emg_onset_sec_comb, emg_onset_of_interest];
+            nrem_emg_offset_sec_comb = [nrem_emg_offset_sec_comb, nrem_emg_offset_sec_corrected(comb_emg_index)];
+        elseif nrem_emg_offset_sec_corrected(comb_emg_index+1) - emg_onset_of_interest < 10
+            nrem_emg_onset_sec_comb = [nrem_emg_onset_sec_comb, emg_onset_of_interest];
+            nrem_emg_offset_sec_comb = [nrem_emg_offset_sec_comb, nrem_emg_offset_sec_corrected(comb_emg_index+1)];
+        end
+    end
+end
+
+comb_durations = nrem_emg_offset_sec_comb - nrem_emg_onset_sec_comb;
+
+% exclude emg activity bouts that are less than 20 seconds apart
+nrem_emg_onset_sec_cut = [];
+nrem_emg_offset_sec_cut = [];
+for emg_index = 1:length(nrem_emg_onset_sec_comb)
+    emg_onset_of_interest = nrem_emg_onset_sec_comb(emg_index);
+    if emg_index == length(nrem_emg_onset_sec_comb)
+        continue
+    end
+    % if emg_onset_of_interest - nrem_emg_onset_sec_corrected(emg_index-1)  < 20
+    %     continue
+    % end
+    if emg_index > 1
+        if emg_onset_of_interest - nrem_emg_onset_sec_comb(emg_index-1) < 20
+            continue
+        end
+    end
+    nrem_emg_onset_sec_cut = [nrem_emg_onset_sec_cut, emg_onset_of_interest];
+    nrem_emg_offset_sec_cut = [nrem_emg_offset_sec_cut, nrem_emg_offset_sec_comb(emg_index)];
+end
+
+nrem_emg_duration_sec_cut = nrem_emg_offset_sec_cut - nrem_emg_onset_sec_cut;
+
+% exclude emg activity bouts that does not follows NREM sleep
+nrem_emg_onset_sec_cut_cut = [];
+nrem_emg_offset_sec_cut_cut = [];
+for emg_index = 1:length(nrem_emg_onset_sec_cut)
+    emg_onset_of_interest = nrem_emg_onset_sec_cut(emg_index);
+    for nrem_index = 2:length(nrem_no_ma_periods_long)
+        nrem_period_of_interest = nrem_no_ma_periods_long(nrem_index,:);  
+        nrem_period_before_EMG_onset = nrem_no_ma_periods_long(nrem_index-1,:);
+        if nrem_period_of_interest(1) > emg_onset_of_interest  % try ismember
+            break
+        end
+    end
+    if(emg_onset_of_interest-10 > nrem_period_before_EMG_onset(1) && emg_onset_of_interest-10 < nrem_period_before_EMG_onset(2)) == 1
+        nrem_emg_onset_sec_cut_cut = [nrem_emg_onset_sec_cut_cut, emg_onset_of_interest];
+        nrem_emg_offset_sec_cut_cut = [nrem_emg_offset_sec_cut_cut, nrem_emg_offset_sec_cut(emg_index)];
+    end
+end
+
+nrem_emg_durations_sec_cut_cut = (nrem_emg_offset_sec_cut_cut-nrem_emg_onset_sec_cut_cut)';
+% if mean(nrem_emg_durations_sec_cut_cut) > 50
+%     nrem_emg_durations_sec_cut_cut = nrem_emg_offset_sec_cut_cut(2:end)-nrem_emg_onset_sec_cut_cut(1:end-1);
+% end
+
+% exclude emg activity bouts with a duration above 10 seconds
+nrem_emg_onset_sec_cut_cut_cut = [];
+nrem_emg_offset_sec_cut_cut_cut = [];
+for emg_index = 1:length(nrem_emg_durations_sec_cut_cut)
+    emg_duration_of_interest = nrem_emg_durations_sec_cut_cut(emg_index);
+    if emg_duration_of_interest > 11
+        continue
+    end
+    nrem_emg_onset_sec_cut_cut_cut = [nrem_emg_onset_sec_cut_cut_cut, nrem_emg_onset_sec_cut_cut(emg_index)];
+    nrem_emg_offset_sec_cut_cut_cut = [nrem_emg_offset_sec_cut_cut_cut, nrem_emg_offset_sec_cut_cut(emg_index)];
+end
+
+nrem_emg_durations_sec_cut_cut_cut = (nrem_emg_offset_sec_cut_cut_cut-nrem_emg_onset_sec_cut_cut_cut)';
+
+sec_signal = (1:length(animal_EMG))./sampling_frq;
+hypnogram_time = (0:length(wake_binary)-1)*4;
+
+% fig = figure;
+% a = subplot (2,1,1);
+% plot_sleep_2(sec_signal, animal_EEG, hypnogram_time, wake_binary, nrem_binary_no_ma, rem_binary);
+% title('EEG');
+% b = subplot (2,1,2);
+% plot_sleep_2(sec_signal, animal_EMG, hypnogram_time, wake_binary, nrem_binary_no_ma, rem_binary);
+% title('EMG');
+% hold on
+% plot(nrem_emg_onset_sec_cut_cut_cut, animal_EMG(round(nrem_emg_onset_sec_cut_cut_cut)), 'g*')
+% hold off
+% linkaxes([a,b],'x');
+
+y_vector = zeros(1, length(nrem_emg_onset_sec_cut_cut_cut))+emg_threshold;
+fig = figure;
+a = subplot (2,1,1);
+plot_sleep_2(sec_signal, animal_EMG, hypnogram_time, wake_binary, nrem_binary_no_ma, rem_binary);
+title('EMG');
+b = subplot (2,1,2);
+plot_sleep_2(sec_signal, corected_animal_EMG_std, hypnogram_time, wake_binary, nrem_binary_no_ma, rem_binary);
+hold on
+% plot(nrem_emg_onset_sec_cut_cut_cut, animal_EMG_std_conv(round(nrem_emg_onset_sec_cut_cut_cut)), 'g*')
+plot(nrem_emg_onset_sec_cut_cut_cut, y_vector, 'g*')
+hold off
+title('rectified EMG');
+linkaxes([a,b],'x');
+
+% 
+% figure,
+% plot(sec_signal, animal_EMG_std)
+% hold on
+% plot(signal_onset_sec, animal_EMG_std(round(signal_onset_sec)), 'g*')
+
+% figure,
+% plot(locs, pks, 'g*')
+% hold on
+% plot(sec_signal, animal_EMG_conv_std)
+% % plot(locs, pks_excl, 'r*')
+% 
+
+
+
