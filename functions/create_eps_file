@@ -1,0 +1,8 @@
+function save = create_eps_file('file_name')
+
+
+print('-painters','-depsc', 'file_name')
+h = datacursormode(fig);
+    h.UpdateFcn = @DataCursor_custom;
+    h.SnapToDataVertex = 'on';
+    datacursormode on
