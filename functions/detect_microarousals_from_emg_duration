@@ -6,7 +6,7 @@ overlap = round(0.5*sampling_frq);
 power_bands = {[1, 4], [4, 10], [12, 16], [16, 30]};
 
 % import hypnograms
-[wake_binary, nrem_binary, rem_binary] = import_state_vectors_wheel(animal_char, timelabel, hypno_file_path);
+[wake_binary, nrem_binary, rem_binary] = import_state_vectors(animal_char, timelabel, hypno_file_path);
 disp("states vectors imported")
 
 %create nrem binary vector that includes ma_binary
