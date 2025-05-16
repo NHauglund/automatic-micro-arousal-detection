@@ -20,6 +20,7 @@
 %  - basic_filt.m
 %  - detect_microarousals_from_emg_duration.m
 %  - import_state_periods.m
+%  - import_state_vectors.m
 %  - find_power_trace
 
 
