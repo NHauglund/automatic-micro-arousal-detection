@@ -1,0 +1,496 @@
+
+
+time_segments = ["Baseline", "Baseline_first_half", "Baseline_second_half", "SD_first_2_hours_post_SD"];
+layers_of_interest = ["2_3", "4", "5", "6"];
+MA_durations = ["zero_to_five"];
+
+opts = detectImportOptions("ChannelAssignment_CorticalAreas_20190408_copy.xlsx",VariableNamesRange="A1:H1",VariableNamingRule="preserve");
+opts.VariableTypes = repmat("string",1,numel(opts.VariableTypes));
+channel_map_file = readtable('D:\Data_copy_Lukas_20231212\CorticalAreas\MatlabScripts\MatlabTables\ChannelAssignment_CorticalAreas_20190408_copy.xlsx', opts);
+
+mouse_info_file = readtable('D:\Data_copy_Lukas_20231212\CorticalAreas\MatlabScripts\MatlabTables\animalinfo_CorticalAreas_20220705.xlsx');
+mouse_info = mouse_info_file(1:7,:);
+mousenames = mouse_info{:,1};
+mousenames_char = char(mousenames);
+
+pathin = "input_path";
+pathout = "output_path";
+
+T_F_load_file = [pathin '\frequency.mat'];
+T_F_file = load(T_F_load_file);
+frequency = T_F_file.f;
+
+for duration_index = 1:size(MA_durations,2)
+    MA_duration = convertStringsToChars(MA_durations(duration_index));
+
+    for time_segment_index = 1:size(time_segments,2)
+        time_segment_of_interest = time_segments(time_segment_index);
+        time_segments_char =  convertStringsToChars(time_segment_of_interest);
+
+        L2_3_before_collector = [];
+        L4_before_collector = [];
+        L5_before_collector = [];
+        L6_before_collector = [];
+
+        L2_3_during_collector = [];
+        L4_during_collector = [];
+        L5_during_collector = [];
+        L6_during_collector = [];
+
+        L2_3_after_collector = [];
+        L4_after_collector = [];
+        L5_after_collector = [];
+        L6_after_collector = [];
+
+        L2_3_perc_change_before_during_collector = [];
+        L4_perc_change_before_during_collector = [];
+        L5_perc_change_before_during_collector = [];
+        L6_perc_change_before_during_collector = [];
+
+        L2_3_perc_change_before_after_collector = [];
+        L4_perc_change_before_after_collector = [];
+        L5_perc_change_before_after_collector = [];
+        L6_perc_change_before_after_collector = [];
+
+        L2_3_AUC_before_after_collector = [];
+        L4_AUC_before_after_collector = [];
+        L5_AUC_before_after_collector = [];
+        L6_AUC_before_after_collector = [];
+
+        L2_3_min_before_after_collector = [];
+        L4_min_before_after_collector = [];
+        L5_min_before_after_collector = [];
+        L6_min_before_after_collector = [];
+
+
+        L2_3_AUC_before_during_collector = [];
+        L4_AUC_before_during_collector = [];
+        L5_AUC_before_during_collector = [];
+        L6_AUC_before_during_collector = [];
+
+        L2_3_min_before_during_collector = [];
+        L4_min_before_during_collector = [];
+        L5_min_before_during_collector = [];
+        L6_min_before_during_collector = [];
+
+        for layer_index = 1:length(layers_of_interest)
+            layer_of_interest = layers_of_interest(layer_index);
+            channel_char = convertStringsToChars(layer_of_interest);
+
+            for mouse_index = 1:length(mousenames)
+                mouse_id = mousenames{mouse_index};
+                mouse_id_char = char(mouse_id);
+
+                if strcmp(mouse_id, 'ML')
+                    L2_3 = 3;
+                    L4 = 5;
+                    L5 = 8;
+                    L6 = 12;
+                elseif strcmp(mouse_id, 'MT')
+                    L2_3 = 3;
+                    L4 = 5;
+                    L5 = 8;
+                    L6 = 12;
+                elseif strcmp(mouse_id, 'MH')
+                    L2_3 = 4;
+                    L4 = 6;
+                    L5 = 8;
+                    L6 = 12;
+                elseif strcmp(mouse_id, 'CA')
+                    L2_3 = 1;
+                    L4 = 3;
+                    L5 = 6;
+                    L6 = 11;
+                elseif strcmp(mouse_id, 'MS')
+                    L2_3 = 1;
+                    L4 = 4;
+                    L5 = 6;
+                    L6 = 11;
+                elseif strcmp(mouse_id, 'Fa')
+                    L2_3 = 2;
+                    L4 = 4;
+                    L5 = 7;
+                    L6 = 12;
+                elseif strcmp(mouse_id, 'Sp')
+                    L2_3 = 1;
+                    L4 = 3;
+                    L5 = 6;
+                    L6 = 10;
+                end
+
+                if strcmp(layer_of_interest, "2_3")
+                    before_cache_file = [pathin '\before_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L2_3),'_ma_duration_',MA_duration,'.mat'];
+                    before_file = load(before_cache_file);
+                    before_file_name = fieldnames(load(before_cache_file));
+                    before_trace = getfield(before_file, before_file_name{1});
+                    L2_3_before_collector = [L2_3_before_collector, before_trace];
+
+                    during_cache_file = [pathin '\during_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L2_3),'_ma_duration_',MA_duration,'.mat'];
+                    during_file = load(during_cache_file);
+                    during_file_name = fieldnames(load(during_cache_file));
+                    during_trace = getfield(during_file, during_file_name{1});
+                    L2_3_during_collector = [L2_3_during_collector, during_trace];
+
+                    after_cache_file = [pathin '\after_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L2_3),'_ma_duration_',MA_duration,'.mat'];
+                    after_file = load(after_cache_file);
+                    after_file_name = fieldnames(load(after_cache_file));
+                    after_trace = getfield(after_file, after_file_name{1});
+                    L2_3_after_collector = [L2_3_after_collector, after_trace];
+
+                    perc_change_before_after = ((after_trace-before_trace)/before_trace) * 100 ;
+                    for p = 1:size(perc_change_before_after,2)
+                        if perc_change_before_after(1,p) ~= 0
+                            percent_change_before_after = perc_change_before_after(:,p);
+                        end
+                    end
+                    L2_3_perc_change_before_after_collector = [L2_3_perc_change_before_after_collector, percent_change_before_after];
+                    AUC_before_after_L2_3 = trapz(f, percent_change_before_after);
+                    L2_3_AUC_before_after_collector = [L2_3_AUC_before_after_collector, AUC_before_after_L2_3];
+                    min_perc_before_after_L2_3 = min(percent_change_before_after);
+                    L2_3_min_before_after_collector = [L2_3_min_before_after_collector, min_perc_before_after_L2_3];
+
+                    perc_change_cache_file = [pathin '\percent_change_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L2_3),'_ma_duration_',MA_duration,'.mat'];
+                    perc_change_file = load(perc_change_cache_file);
+                    perc_change_file_name = fieldnames(load(perc_change_cache_file));
+                    perc_change_trace = getfield(perc_change_file, perc_change_file_name{1});
+                    L2_3_perc_change_before_during_collector = [L2_3_perc_change_before_during_collector, perc_change_trace];
+                    AUC_L2_3 = trapz(f, perc_change_trace);
+                    L2_3_AUC_before_during_collector = [L2_3_AUC_before_during_collector, AUC_L2_3];
+                    min_perc_L2_3 = min(perc_change_trace);
+                    L2_3_min_before_during_collector = [L2_3_min_before_during_collector, min_perc_L2_3];
+
+
+                elseif strcmp(layer_of_interest, "4")
+                    before_cache_file = [pathin '\before_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L4),'_ma_duration_',MA_duration,'.mat'];
+                    before_file = load(before_cache_file);
+                    before_file_name = fieldnames(load(before_cache_file));
+                    before_trace = getfield(before_file, before_file_name{1});
+                    L4_before_collector = [L4_before_collector, before_trace];
+
+                    during_cache_file = [pathin '\during_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L4),'_ma_duration_',MA_duration,'.mat'];
+                    during_file = load(during_cache_file);
+                    during_file_name = fieldnames(load(during_cache_file));
+                    during_trace = getfield(during_file, during_file_name{1});
+                    L4_during_collector = [L4_during_collector, during_trace];
+
+                    after_cache_file = [pathin '\after_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L4),'_ma_duration_',MA_duration,'.mat'];
+                    after_file = load(after_cache_file);
+                    after_file_name = fieldnames(load(after_cache_file));
+                    after_trace = getfield(after_file, after_file_name{1});
+                    L4_after_collector = [L4_after_collector, after_trace];
+
+                    perc_change_before_after = ((after_trace-before_trace)/before_trace) * 100 ;
+                    for p = 1:size(perc_change_before_after,2)
+                        if perc_change_before_after(1,p) ~= 0
+                            percent_change_before_after = perc_change_before_after(:,p);
+                        end
+                    end
+                    L4_perc_change_before_after_collector = [L4_perc_change_before_after_collector, percent_change_before_after];
+                    AUC_before_after_L4 = trapz(f, percent_change_before_after);
+                    L4_AUC_before_after_collector = [L4_AUC_before_after_collector, AUC_before_after_L4];
+                    min_perc_before_after_L4 = min(percent_change_before_after);
+                    L4_min_before_after_collector = [L4_min_before_after_collector, min_perc_before_after_L4];
+
+
+                    perc_change_cache_file = [pathin '\percent_change_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L4),'_ma_duration_',MA_duration,'.mat'];
+                    perc_change_file = load(perc_change_cache_file);
+                    perc_change_file_name = fieldnames(load(perc_change_cache_file));
+                    perc_change_trace = getfield(perc_change_file, perc_change_file_name{1});
+                    L4_perc_change_before_during_collector = [L4_perc_change_before_during_collector, perc_change_trace];
+                    AUC_L4 = trapz(f, perc_change_trace);
+                    L4_AUC_before_during_collector = [L4_AUC_before_during_collector, AUC_L4];
+                    min_perc_L4 = min(perc_change_trace);
+                    L4_min_before_during_collector = [L4_min_before_during_collector, min_perc_L4];
+
+
+                elseif strcmp(layer_of_interest, "5")
+                    before_cache_file = [pathin '\before_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L5),'_ma_duration_',MA_duration,'.mat'];
+                    before_file = load(before_cache_file);
+                    before_file_name = fieldnames(load(before_cache_file));
+                    before_trace = getfield(before_file, before_file_name{1});
+                    L5_before_collector = [L5_before_collector, before_trace];
+
+                    during_cache_file = [pathin '\during_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L5),'_ma_duration_',MA_duration,'.mat'];
+                    during_file = load(during_cache_file);
+                    during_file_name = fieldnames(load(during_cache_file));
+                    during_trace = getfield(during_file, during_file_name{1});
+                    L5_during_collector = [L5_during_collector, during_trace];
+
+                    after_cache_file = [pathin '\after_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L5),'_ma_duration_',MA_duration,'.mat'];
+                    after_file = load(after_cache_file);
+                    after_file_name = fieldnames(load(after_cache_file));
+                    after_trace = getfield(after_file, after_file_name{1});
+                    L5_after_collector = [L5_after_collector, after_trace];
+
+                      perc_change_before_after = ((after_trace-before_trace)/before_trace) * 100 ;
+                    for p = 1:size(perc_change_before_after,2)
+                        if perc_change_before_after(1,p) ~= 0
+                            percent_change_before_after = perc_change_before_after(:,p);
+                        end
+                    end
+                    L5_perc_change_before_after_collector = [L5_perc_change_before_after_collector, percent_change_before_after];
+                    AUC_before_after_L5 = trapz(f, percent_change_before_after);
+                    L5_AUC_before_after_collector = [L5_AUC_before_after_collector, AUC_before_after_L5];
+                    min_perc_before_after_L5 = min(percent_change_before_after);
+                    L5_min_before_after_collector = [L5_min_before_after_collector, min_perc_before_after_L5];
+
+                    perc_change_cache_file = [pathin '\percent_change_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L5),'_ma_duration_',MA_duration,'.mat'];
+                    perc_change_file = load(perc_change_cache_file);
+                    perc_change_file_name = fieldnames(load(perc_change_cache_file));
+                    perc_change_trace = getfield(perc_change_file, perc_change_file_name{1});
+                    L5_perc_change_before_during_collector = [L5_perc_change_before_during_collector, perc_change_trace];
+                    AUC_L5 = trapz(f, perc_change_trace);
+                    L5_AUC_before_during_collector = [L5_AUC_before_during_collector, AUC_L5];
+                    min_perc_L5 = min(perc_change_trace);
+                    L5_min_before_during_collector = [L5_min_before_during_collector, min_perc_L5];
+
+
+                elseif strcmp(layer_of_interest, "6")
+                    before_cache_file = [pathin '\before_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L6),'_ma_duration_',MA_duration,'.mat'];
+                    before_file = load(before_cache_file);
+                    before_file_name = fieldnames(load(before_cache_file));
+                    before_trace = getfield(before_file, before_file_name{1});
+                    L6_before_collector = [L6_before_collector, before_trace];
+
+                    during_cache_file = [pathin '\during_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L6),'_ma_duration_',MA_duration,'.mat'];
+                    during_file = load(during_cache_file);
+                    during_file_name = fieldnames(load(during_cache_file));
+                    during_trace = getfield(during_file, during_file_name{1});
+                    L6_during_collector = [L6_during_collector, during_trace];
+
+                    after_cache_file = [pathin '\after_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L6),'_ma_duration_',MA_duration,'.mat'];
+                    after_file = load(after_cache_file);
+                    after_file_name = fieldnames(load(after_cache_file));
+                    after_trace = getfield(after_file, after_file_name{1});
+                    L6_after_collector = [L6_after_collector, after_trace];
+
+                      perc_change_before_after = ((after_trace-before_trace)/before_trace) * 100 ;
+                    for p = 1:size(perc_change_before_after,2)
+                        if perc_change_before_after(1,p) ~= 0
+                            percent_change_before_after = perc_change_before_after(:,p);
+                        end
+                    end
+                    L6_perc_change_before_after_collector = [L6_perc_change_before_after_collector, percent_change_before_after];
+                    AUC_before_after_L6 = trapz(f, percent_change_before_after);
+                    L6_AUC_before_after_collector = [L6_AUC_before_after_collector, AUC_before_after_L6];
+                    min_perc_before_after_L6 = min(percent_change_before_after);
+                    L6_min_before_after_collector = [L6_min_before_after_collector, min_perc_before_after_L6];
+
+                    perc_change_cache_file = [pathin '\percent_change_',mouse_id_char,'_',time_segments_char,'_channel_',int2str(L6),'_ma_duration_',MA_duration,'.mat'];
+                    perc_change_file = load(perc_change_cache_file);
+                    perc_change_file_name = fieldnames(load(perc_change_cache_file));
+                    perc_change_trace = getfield(perc_change_file, perc_change_file_name{1});
+                    L6_perc_change_before_during_collector = [L6_perc_change_before_during_collector, perc_change_trace];
+                    AUC_L6 = trapz(f, perc_change_trace);
+                    L6_AUC_before_during_collector = [L6_AUC_before_during_collector, AUC_L6];
+                    min_perc_L6 = min(perc_change_trace);
+                    L6_min_before_during_collector = [L6_min_before_during_collector, min_perc_L6];
+
+
+                end
+
+            end
+
+        end
+
+        excel_headers = ["frequency", "ML", "MT", "MH", "CA", "MS", "Fa", "Sp"];
+        excel_headers_AUC = ["ML", "MT", "MH", "CA", "MS", "Fa", "Sp"];
+
+
+        L2_3_before_excel_file = [excel_headers; frequency, L2_3_before_collector];
+        L2_3_before_excel_name = [pathout '\',time_segments_char,'_L2_3_before_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L2_3_before_excel_file, L2_3_before_excel_name);
+
+        L4_before_excel_file = [excel_headers; frequency, L4_before_collector];
+        L4_before_excel_name = [pathout '\',time_segments_char,'_L4_before_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L4_before_excel_file, L4_before_excel_name);
+
+        L5_before_excel_file = [excel_headers; frequency, L5_before_collector];
+        L5_before_excel_name = [pathout '\',time_segments_char,'_L5_before_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L5_before_excel_file, L5_before_excel_name);
+
+        L6_before_excel_file = [excel_headers; frequency, L6_before_collector];
+        L6_before_excel_name = [pathout '\',time_segments_char,'_L6_before_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L6_before_excel_file, L6_before_excel_name);
+
+
+
+        L2_3_during_excel_file = [excel_headers; frequency, L2_3_during_collector];
+        L2_3_during_excel_name = [pathout '\',time_segments_char,'_L2_3_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L2_3_during_excel_file, L2_3_during_excel_name);
+
+        L4_during_excel_file = [excel_headers; frequency, L4_during_collector];
+        L4_during_excel_name = [pathout '\',time_segments_char,'_L4_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L4_during_excel_file, L4_during_excel_name);
+
+        L5_during_excel_file = [excel_headers; frequency, L5_during_collector];
+        L5_during_excel_name = [pathout '\',time_segments_char,'_L5_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L5_during_excel_file, L5_during_excel_name);
+
+        L6_during_excel_file = [excel_headers; frequency, L6_during_collector];
+        L6_during_excel_name = [pathout '\',time_segments_char,'_L6_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L6_during_excel_file, L6_during_excel_name);
+
+
+
+        L2_3_after_excel_file = [excel_headers; frequency, L2_3_after_collector];
+        L2_3_after_excel_name = [pathout '\',time_segments_char,'_L2_3_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L2_3_after_excel_file, L2_3_after_excel_name);
+
+        L4_after_excel_file = [excel_headers; frequency, L4_after_collector];
+        L4_after_excel_name = [pathout '\',time_segments_char,'_L4_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L4_after_excel_file, L4_after_excel_name);
+
+        L5_after_excel_file = [excel_headers; frequency, L5_after_collector];
+        L5_after_excel_name = [pathout '\',time_segments_char,'_L5_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L5_after_excel_file, L5_after_excel_name);
+
+        L6_after_excel_file = [excel_headers; frequency, L6_after_collector];
+        L6_after_excel_name = [pathout '\',time_segments_char,'_L6_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L6_after_excel_file, L6_after_excel_name);
+
+
+
+        L2_3_perc_change_before_during_excel_file = [excel_headers; frequency, L2_3_perc_change_before_during_collector];
+        L2_3_perc_change_before_during_excel_name = [pathout '\',time_segments_char,'_L2_3_perc_change_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L2_3_perc_change_before_during_excel_file, L2_3_perc_change_before_during_excel_name);
+
+        L4_perc_change_before_during_excel_file = [excel_headers; frequency, L4_perc_change_before_during_collector];
+        L4_perc_change_before_during_excel_name = [pathout '\',time_segments_char,'_L4_perc_change_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L4_perc_change_before_during_excel_file, L4_perc_change_before_during_excel_name);
+
+        L5_perc_change_before_during_excel_file = [excel_headers; frequency, L5_perc_change_before_during_collector];
+        L5_perc_change_before_during_excel_name = [pathout '\',time_segments_char,'_L5_perc_change_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L5_perc_change_before_during_excel_file, L5_perc_change_before_during_excel_name);
+
+        L6_perc_change_before_during_excel_file = [excel_headers; frequency, L6_perc_change_before_during_collector];
+        L6_perc_change_before_during_excel_name = [pathout '\',time_segments_char,'_L6_perc_change_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L6_perc_change_before_during_excel_file, L6_perc_change_before_during_excel_name);
+
+
+
+        L2_3_AUC_before_during_excel_file = [excel_headers_AUC; L2_3_AUC_before_during_collector];
+        L2_3_AUC_before_during_excel_name = [pathout '\',time_segments_char,'_L2_3_AUC_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L2_3_AUC_before_during_excel_file, L2_3_AUC_before_during_excel_name);
+
+        L4_AUC_before_during_excel_file = [excel_headers_AUC; L4_AUC_before_during_collector];
+        L4_AUC_before_during_excel_name = [pathout '\',time_segments_char,'_L4_AUC_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L4_AUC_before_during_excel_file, L4_AUC_before_during_excel_name);
+
+        L5_AUC_before_during_excel_file = [excel_headers_AUC; L5_AUC_before_during_collector];
+        L5_AUC_before_during_excel_name = [pathout '\',time_segments_char,'_L5_AUC_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L5_AUC_before_during_excel_file, L5_AUC_before_during_excel_name);
+
+        L6_AUC_before_during_excel_file = [excel_headers_AUC; L6_AUC_before_during_collector];
+        L6_AUC_before_during_excel_name = [pathout '\',time_segments_char,'_L6_AUC_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L6_AUC_before_during_excel_file, L6_AUC_before_during_excel_name);
+
+
+
+        L2_3_min_before_during_excel_file = [excel_headers_AUC; L2_3_min_before_during_collector];
+        L2_3_min_before_during_excel_name = [pathout '\',time_segments_char,'_L2_3_perc_min_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L2_3_min_before_during_excel_file, L2_3_min_before_during_excel_name);
+
+        L4_min_before_during_excel_file = [excel_headers_AUC; L4_min_before_during_collector];
+        L4_min_before_during_excel_name = [pathout '\',time_segments_char,'_L4_perc_min_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L4_min_before_during_excel_file, L4_min_before_during_excel_name);
+
+        L5_min_before_during_excel_file = [excel_headers_AUC; L5_min_before_during_collector];
+        L5_min_before_during_excel_name = [pathout '\',time_segments_char,'_L5_perc_min_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L5_min_before_during_excel_file, L5_min_before_during_excel_name);
+
+        L6_min_before_during_excel_file = [excel_headers_AUC; L6_min_before_during_collector];
+        L6_min_before_during_excel_name = [pathout '\',time_segments_char,'_L6_perc_min_before_during_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L6_min_before_during_excel_file, L6_min_before_during_excel_name);
+
+
+
+        L2_3_perc_change_before_after_excel_file = [excel_headers; frequency, L2_3_perc_change_before_after_collector];
+        L2_3_perc_change_before_after_excel_name = [pathout '\',time_segments_char,'_L2_3_perc_change_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L2_3_perc_change_before_after_excel_file, L2_3_perc_change_before_after_excel_name);
+
+        L4_perc_change_before_after_excel_file = [excel_headers; frequency, L4_perc_change_before_after_collector];
+        L4_perc_change_before_after_excel_name = [pathout '\',time_segments_char,'_L4_perc_change_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L4_perc_change_before_after_excel_file, L4_perc_change_before_after_excel_name);
+
+        L5_perc_change_before_after_excel_file = [excel_headers; frequency, L5_perc_change_before_after_collector];
+        L5_perc_change_before_after_excel_name = [pathout '\',time_segments_char,'_L5_perc_change_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L5_perc_change_before_after_excel_file, L5_perc_change_before_after_excel_name);
+
+        L6_perc_change_before_after_excel_file = [excel_headers; frequency, L6_perc_change_before_after_collector];
+        L6_perc_change_before_after_excel_name = [pathout '\',time_segments_char,'_L6_perc_change_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L6_perc_change_before_after_excel_file, L6_perc_change_before_after_excel_name);
+
+
+
+        L2_3_AUC_before_after_excel_file = [excel_headers_AUC; L2_3_AUC_before_after_collector];
+        L2_3_AUC_before_after_excel_name = [pathout '\',time_segments_char,'_L2_3_AUC_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L2_3_AUC_before_after_excel_file, L2_3_AUC_before_after_excel_name);
+
+        L4_AUC_before_after_excel_file = [excel_headers_AUC; L4_AUC_before_after_collector];
+        L4_AUC_before_after_excel_name = [pathout '\',time_segments_char,'_L4_AUC_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L4_AUC_before_after_excel_file, L4_AUC_before_after_excel_name);
+
+        L5_AUC_before_after_excel_file = [excel_headers_AUC; L5_AUC_before_after_collector];
+        L5_AUC_before_after_excel_name = [pathout '\',time_segments_char,'_L5_AUC_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L5_AUC_before_after_excel_file, L5_AUC_before_after_excel_name);
+
+        L6_AUC_before_after_excel_file = [excel_headers_AUC; L6_AUC_before_after_collector];
+        L6_AUC_before_after_excel_name = [pathout '\',time_segments_char,'_L6_AUC_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L6_AUC_before_after_excel_file, L6_AUC_before_after_excel_name);
+
+
+
+        L2_3_min_before_after_excel_file = [excel_headers_AUC; L2_3_min_before_after_collector];
+        L2_3_min_before_after_excel_name = [pathout '\',time_segments_char,'_L2_3_perc_min_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L2_3_min_before_after_excel_file, L2_3_min_before_after_excel_name);
+
+        L4_min_before_after_excel_file = [excel_headers_AUC; L4_min_before_after_collector];
+        L4_min_before_after_excel_name = [pathout '\',time_segments_char,'_L4_perc_min_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L4_min_before_after_excel_file, L4_min_before_after_excel_name);
+
+        L5_min_before_after_excel_file = [excel_headers_AUC; L5_min_before_after_collector];
+        L5_min_before_after_excel_name = [pathout '\',time_segments_char,'_L5_perc_min_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L5_min_before_after_excel_file, L5_min_before_after_excel_name);
+
+        L6_min_before_after_excel_file = [excel_headers_AUC; L6_min_before_after_collector];
+        L6_min_before_after_excel_name = [pathout '\',time_segments_char,'_L6_perc_min_before_after_ma_duration_',MA_duration,'.xlsx'];
+        writematrix(L6_min_before_after_excel_file, L6_min_before_after_excel_name);
+
+
+
+
+        figure,
+        plot(frequency, mean(L2_3_perc_change_before_during_collector,2))
+        hold on
+        plot(frequency, mean(L4_perc_change_before_during_collector,2))
+        plot(frequency, mean(L5_perc_change_before_during_collector,2))
+        plot(frequency, mean(L6_perc_change_before_during_collector,2))
+        legend([layers_of_interest])
+        xlim([0 30])
+        title(["before vs during", time_segments_char, MA_duration]);
+
+        figure,
+        plot(frequency, mean(L2_3_perc_change_before_after_collector,2))
+        hold on
+        plot(frequency, mean(L4_perc_change_before_after_collector,2))
+        plot(frequency, mean(L5_perc_change_before_after_collector,2))
+        plot(frequency, mean(L6_perc_change_before_after_collector,2))
+        legend([layers_of_interest])
+        xlim([0 30])
+        title(["before vs after", time_segments_char, MA_duration]);
+
+
+
+
+    end
+
+end
+
+
+
+
+
+
+
+
