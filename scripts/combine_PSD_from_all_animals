@@ -1,3 +1,5 @@
+% this script collects PSD plots from all animals and creates excel files with the average PSD traces from all animals combined. In addition,
+% it creates files from all animals with percent change during vs. before micro-arousals and area under the curve analysis.
 
 
 time_segments = ["Baseline", "Baseline_first_half", "Baseline_second_half", "SD_first_2_hours_post_SD"];
