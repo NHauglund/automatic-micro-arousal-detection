@@ -1,0 +1,326 @@
+
+% This script generates power spectral density plots of LFP traces in different cortical
+% layers during the specified time bins (before, during and after the micro-arousal). 
+% In addition, it analyzes the PSDs and compares before and after.
+
+% inputs:
+%  - vigilance state info from the matlab struct "VigilancestateTimecourseAnim.mat"
+%  - channel and layer info from the "ChannelAssignment_L5_20200701_copy.xlsx" sheet
+%  - processed LFP data saved as either 12 or 24 hour files
+%  - excel sheet with animals that have good LFP ("animals_with_LFP.xlsx")
+
+% outputs:
+% .mat files with the power spectral densities for each animal in each time bin, 
+% a file called T_F.mat with the frequencies of the PSD plot, analysis of the "before" versus
+% "during" PSD.
+%  Each file is the average of alle micro-arousals for a specific mouse,
+%  layer and time period
+
+% Functions needed:
+%  - process_LFP_cortex.m
+%  - basic_filt.m
+%  - detect_microarousals_from_emg_duration.m
+%  - import_state_periods.m
+%  - import_state_vectors.m
+%  - find_power_trace
+
+
+%%
+
+time_segments = ["Baseline", "Baseline_first_half", "Baseline_second_half", "SD_first_2_hours_post_SD"];
+% time_segments = ["Baseline_first_half"];         % "Baseline", "Baseline_first_half", "Baseline_second_half"
+transition_of_interest = ["ma"];    %"wake", "sws", "rem", "ma"
+data_times = ["before_EMG", "during_EMG_peak", "post_EMG_peak"];
+% data_times = ["post_EMG_peak"];
+% data_times = ["before_EMG"];
+% MA_durations = ["zero_to_three", "five_to_ten"];
+MA_durations = ["zero_to_five"];
+channels_of_interest = 1:16;
+% channels_of_interest = [8];
+
+
+% time_segments is the segments of the recording that should be compared. Here the baseline recording
+% is divided into the first 4 hours and the rest of lights on, whereas the SD
+% recording is the first 4 hours after sleep deprivation.
+
+mouse_info_file = readtable('D:\Data_copy_Lukas_20231212\CorticalAreas\MatlabScripts\MatlabTables\animalinfo_CorticalAreas_20220705.xlsx');
+mouse_info = mouse_info_file(1:7,:);
+opts = detectImportOptions("ChannelAssignment_CorticalAreas_20190408_copy.xlsx",VariableNamesRange="A1:H1",VariableNamingRule="preserve");
+opts.VariableTypes = repmat("string",1,numel(opts.VariableTypes));
+channel_map_file = readtable('D:\Data_copy_Lukas_20231212\CorticalAreas\MatlabScripts\MatlabTables\ChannelAssignment_CorticalAreas_20190408_copy.xlsx', opts);
+hypno_file_path = 'D:\Data_copy_Lukas_20231212\CorticalAreas\Output_state_vectors\';    % path to the folder where state vector structs are saved
+LFP_file_path_24 = 'D:\Data_copy_Lukas_20231212\CorticalAreas\OutputSignals24h\';    % path to the folder where 24h LFP data is saved
+LFP_file_path_12 = 'D:\Data_copy_Lukas_20231212\CorticalAreas\OutputSignals12h\';    % path to the folder where 12h LFP data is saved
+
+pathout = 'Z:\Users\Natalie_Hauglund\001.Projects\001.Project_LFP_MA_analysis\CorticalAreas\Output_MA_analysis\PSD';
+
+
+arousal_window_size = 50;   % number of seconds before and after the MA in seconds on the plot
+sampling_frq = 256;
+power_bands = {[0.5, 4], [4, 10], [12, 16], [16, 30], [60 80]};
+total_power_band = [0, 30];
+mousenames = mouse_info{:,1};
+
+% mousenames = {'Fa', 'Sp'};
+
+%loop through all animals in this category
+for n=1:size(mousenames,1)
+    animal=mousenames{n};
+
+    disp([animal ' is being proccessed, please be patient :-)'])
+
+    for time_segment_index = 1:size(time_segments,2)
+        time_segment_of_interest = time_segments(time_segment_index);
+        time_segment_char = convertStringsToChars(time_segment_of_interest);
+
+        if strcmp(time_segment_of_interest, "Baseline_first_half") || strcmp(time_segment_of_interest, "Baseline_second_half") || strcmp(time_segment_of_interest, "Baseline")
+            timelabel = 'BL';
+        elseif strcmp(time_segment_of_interest, "SD_first_2_hours_post_SD")
+            timelabel = 'SD';
+        end
+
+
+        if time_segment_index == 1 || time_segment_index == 4
+
+            %create struct with LFP traces for each channel from the mouse of interest
+            [LFP_data, animal_EEG, animal_EMG] = process_LFP_cortex(animal, timelabel, LFP_file_path_24, LFP_file_path_12);
+            disp("LFP traces imported")
+
+            % filter LFP signal
+            [LFP_data, animal_EMG_filt] = basic_filt(LFP_data, animal_EMG);
+
+            % detect micro-arousals
+            [nrem_emg_onset_sec, nrem_emg_duration_sec, nrem_no_ma_periods] = detect_microarousals_from_emg_duration_no_ma(animal, animal_EEG, animal_EMG, timelabel, hypno_file_path);
+            state_onsets = nrem_emg_onset_sec;
+        end
+
+
+        for duration_index = 1%1:size(MA_durations,2)
+            MA_duration = convertStringsToChars(MA_durations(duration_index));
+
+
+            % loop through channels
+            for trace_index = 1:length(channels_of_interest)
+                channel_of_interest = channels_of_interest(trace_index);
+                data_of_interest = LFP_data.traces_filt(:,find(LFP_data.channels == ['LFP_channel_', int2str(channel_of_interest)]));
+
+                before_EMG_collector = [];
+                after_EMG_collector = [];
+
+                % loop through times of interest
+                for data_time = 1:length(data_times)
+                    data_time_of_interest = data_times(data_time);band_power_collector = [];
+
+                    ma_traces = [];
+                    pxx_collector = [];
+
+                    % loop through EMG event
+                    for state_onset_index=1:length(state_onsets)
+                        arousal_onset = state_onsets(state_onset_index);
+
+                        if isnan(arousal_onset)
+                            continue
+                        end
+
+                        arousal_onset_index_EEG_frames = sampling_frq * arousal_onset;
+                        index_window_EEG_frames = floor(sampling_frq * arousal_window_size);
+
+
+                        if strcmp(transition_of_interest, "ma")
+                            if strcmp(MA_duration, 'zero_to_three')
+                                if strcmp(data_time_of_interest, "before_EMG")
+                                    from_index_EEG_frames = floor(arousal_onset_index_EEG_frames-index_window_EEG_frames);
+                                    to_index_EEG_frames = floor(from_index_EEG_frames + 30*sampling_frq);
+                                elseif strcmp(data_time_of_interest, "during_EMG_peak")
+                                    from_index_EEG_frames = floor(arousal_onset_index_EEG_frames);
+                                    to_index_EEG_frames = floor(from_index_EEG_frames + 2*sampling_frq);
+                                elseif strcmp(data_time_of_interest, "post_EMG_peak")
+                                    from_index_EEG_frames = floor(arousal_onset_index_EEG_frames + 3*sampling_frq);
+                                    to_index_EEG_frames = floor(from_index_EEG_frames + 8*sampling_frq);
+                                else
+                                    "wrong data time"
+                                end
+                            elseif strcmp(MA_duration, 'five_to_ten')
+                                if strcmp(data_time_of_interest, "before_EMG")
+                                    from_index_EEG_frames = floor(arousal_onset_index_EEG_frames-index_window_EEG_frames);
+                                    to_index_EEG_frames = floor(from_index_EEG_frames + 30*sampling_frq);
+                                elseif strcmp(data_time_of_interest, "during_EMG_peak")
+                                    from_index_EEG_frames = floor(arousal_onset_index_EEG_frames);
+                                    to_index_EEG_frames = floor(from_index_EEG_frames + 2*sampling_frq);
+                                elseif strcmp(data_time_of_interest, "post_EMG_peak")
+                                    from_index_EEG_frames = floor(arousal_onset_index_EEG_frames + 10*sampling_frq);
+                                    to_index_EEG_frames = floor(from_index_EEG_frames + 15*sampling_frq);
+                                else
+                                    "wrong data time"
+                                end
+                            elseif strcmp(MA_duration, 'zero_to_five')
+                                if strcmp(data_time_of_interest, "before_EMG")
+                                    from_index_EEG_frames = floor(arousal_onset_index_EEG_frames-index_window_EEG_frames);
+                                    to_index_EEG_frames = floor(from_index_EEG_frames + 30*sampling_frq);
+                                elseif strcmp(data_time_of_interest, "during_EMG_peak")
+                                    from_index_EEG_frames = floor(arousal_onset_index_EEG_frames);
+                                    to_index_EEG_frames = floor(from_index_EEG_frames + 2*sampling_frq);
+                                elseif strcmp(data_time_of_interest, "post_EMG_peak")
+                                    from_index_EEG_frames = floor(arousal_onset_index_EEG_frames + 5*sampling_frq);
+                                    to_index_EEG_frames = floor(from_index_EEG_frames + 10*sampling_frq);
+                                else
+                                    "wrong data time"
+                                end
+                            end
+                        end
+
+                        
+                        % 
+                        % if strcmp(data_time_of_interest, "before_EMG")
+                        %     from_index_EEG_frames = floor(arousal_onset_index_EEG_frames-index_window_EEG_frames);
+                        %     to_index_EEG_frames = floor(from_index_EEG_frames + 30*sampling_frq);
+                        % elseif strcmp(data_time_of_interest, "during_EMG_peak")
+                        %     from_index_EEG_frames = floor(arousal_onset_index_EEG_frames);
+                        %     to_index_EEG_frames = floor(from_index_EEG_frames + 2*sampling_frq);
+                        % elseif strcmp(data_time_of_interest, "post_EMG_peak")
+                        %     from_index_EEG_frames = floor(arousal_onset_index_EEG_frames + 5*sampling_frq);
+                        %     to_index_EEG_frames = floor(from_index_EEG_frames + 10*sampling_frq);
+                        % else
+                        %     "wrong data time"
+                        % end
+
+                        if from_index_EEG_frames < 1 || to_index_EEG_frames > length(data_of_interest)
+                            continue
+                        end
+
+                        if from_index_EEG_frames < arousal_window_size*sampling_frq || to_index_EEG_frames > length(data_of_interest)-arousal_window_size*sampling_frq
+                            continue
+                        end
+
+                        if state_onset_index == length(state_onsets)
+                            continue
+                        end
+
+                        if state_onset_index == 1
+                            continue
+                        end
+
+                        if strcmp(transition_of_interest, "ma")
+                            if strcmp(MA_duration, 'zero_to_three')
+                                if nrem_emg_duration_sec(state_onset_index) < 0
+                                    continue
+                                end
+                                if nrem_emg_duration_sec(state_onset_index) > 3
+                                    continue
+                                end
+                            elseif strcmp(MA_duration, 'zero_to_five')
+                                if nrem_emg_duration_sec(state_onset_index) < 0
+                                    continue
+                                end
+                                if nrem_emg_duration_sec(state_onset_index) > 5
+                                    continue
+                                end
+                            elseif strcmp(MA_duration, 'five_to_ten')
+                                if nrem_emg_duration_sec(state_onset_index) < 5
+                                    continue
+                                end
+                                if nrem_emg_duration_sec(state_onset_index) > 10
+                                    continue
+                                end
+                            end
+                        end
+
+                        if strcmp(time_segment_of_interest, "Baseline_first_half") == 1
+                            if from_index_EEG_frames > 6 * 60 * 60 * sampling_frq || to_index_EEG_frames > 6 * 60 * 60 * sampling_frq
+                                continue
+                            end
+                        elseif strcmp(time_segment_of_interest, "Baseline_second_half" ) == 1
+                            if from_index_EEG_frames < 6 * 60 * 60 * sampling_frq || to_index_EEG_frames < 6 * 60 * 60 * sampling_frq
+                                continue
+                            end
+                            if from_index_EEG_frames > 12 * 60 * 60 * sampling_frq || to_index_EEG_frames > 12 * 60 * 60 * sampling_frq
+                                continue
+                            end
+                        elseif strcmp(time_segment_of_interest, "Baseline") == 1
+                            if to_index_EEG_frames > 24 * 60 * 60 * sampling_frq
+                                continue
+                            end
+                        elseif strcmp(time_segment_of_interest, "SD_first_2_hours_post_SD") == 1
+                            if from_index_EEG_frames < 6 * 60 * 60 * sampling_frq || to_index_EEG_frames < 6 * 60 * 60 * sampling_frq
+                                continue
+                            end
+                            if from_index_EEG_frames > (6+2) * 60 * 60 * sampling_frq || to_index_EEG_frames > (6+2) * 60 * 60 * sampling_frq
+                                continue
+                            end
+                        end
+
+
+                        % make collector of microarousals
+                        ma_trace = data_of_interest(from_index_EEG_frames:to_index_EEG_frames);
+                        ma_traces = [ma_traces, arousal_onset];
+
+                        % PSD parameters
+                        Fres = 0.5;   % desired frequency resolution of PSD. Lab standard is 0.25Hz
+                        noverlap = 0;   % the number of samples to overlap between adjacent windows
+
+                        % Calculate PSD
+                        [pxx, f] = pwelch(ma_trace, hanning(sampling_frq/Fres) , noverlap , sampling_frq/Fres , sampling_frq ,'psd' );
+
+                        pxx_collector = [pxx_collector, pxx];
+
+                    end
+
+                    if strcmp(data_time_of_interest, "before_EMG")
+                        before_EMG_collector = pxx_collector;
+                    elseif strcmp(data_time_of_interest, "during_EMG_peak")
+                        during_EMG_collector = pxx_collector;
+                    elseif strcmp(data_time_of_interest, "post_EMG_peak")
+                        after_EMG_collector = pxx_collector;
+                    end
+
+                end
+
+                mean_before_PSD = median(before_EMG_collector,2);
+                mean_during_PSD = median(during_EMG_collector,2);
+                mean_after_PSD = median(after_EMG_collector,2);
+
+                perc_change = ((mean_during_PSD-mean_before_PSD)/mean_before_PSD) * 100 ;
+                for p = 1:size(perc_change,2)
+                    if perc_change(1,p) ~= 0
+                        percent_change = perc_change(:,p);
+                    end
+                end
+
+                % if channel_of_interest == 8
+                %     figure, plot(mean_before_PSD)
+                %     hold on
+                %     plot(mean_during_PSD)
+                %     xlim([0 30])
+                %     title([animal, " ", time_segment_char, " ", MA_duration])
+                %     drawnow
+                % 
+                %     figure, plot(percent_change)
+                %     xlim([0 30])
+                %     title([animal, " ", time_segment_char, " ", MA_duration])
+                %     drawnow
+                % end
+
+                save_before_name = [pathout '\before_',animal,'_',time_segment_char,'_channel_',num2str(channel_of_interest),'_ma_duration_',MA_duration,'.mat'];
+                save_during_name = [pathout '\during_',animal,'_',time_segment_char,'_channel_',num2str(channel_of_interest),'_ma_duration_',MA_duration,'.mat'];
+                save_after_name = [pathout '\after_',animal,'_',time_segment_char,'_channel_',num2str(channel_of_interest),'_ma_duration_',MA_duration,'.mat'];
+                save_percent_name = [pathout '\percent_change_',animal,'_',time_segment_char,'_channel_',num2str(channel_of_interest),'_ma_duration_',MA_duration,'.mat'];
+                save_T_F = [pathout '\frequency.mat'];
+
+                save(save_before_name, 'mean_before_PSD');
+                save(save_during_name, 'mean_during_PSD');
+                save(save_after_name, 'mean_after_PSD');
+                save(save_percent_name, 'percent_change');
+                save(save_T_F, 'f');
+
+
+            end
+        
+        end
+
+    end
+
+end
+
+
+
+
