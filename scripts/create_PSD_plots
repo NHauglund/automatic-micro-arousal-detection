@@ -28,20 +28,10 @@
 %%
 
 time_segments = ["Baseline", "Baseline_first_half", "Baseline_second_half", "SD_first_2_hours_post_SD"];
-% time_segments = ["Baseline_first_half"];         % "Baseline", "Baseline_first_half", "Baseline_second_half"
 transition_of_interest = ["ma"];    %"wake", "sws", "rem", "ma"
 data_times = ["before_EMG", "during_EMG_peak", "post_EMG_peak"];
-% data_times = ["post_EMG_peak"];
-% data_times = ["before_EMG"];
-% MA_durations = ["zero_to_three", "five_to_ten"];
 MA_durations = ["zero_to_five"];
 channels_of_interest = 1:16;
-% channels_of_interest = [8];
-
-
-% time_segments is the segments of the recording that should be compared. Here the baseline recording
-% is divided into the first 4 hours and the rest of lights on, whereas the SD
-% recording is the first 4 hours after sleep deprivation.
 
 mouse_info_file = readtable('D:\Data_copy_Lukas_20231212\CorticalAreas\MatlabScripts\MatlabTables\animalinfo_CorticalAreas_20220705.xlsx');
 mouse_info = mouse_info_file(1:7,:);
@@ -52,16 +42,13 @@ hypno_file_path = 'D:\Data_copy_Lukas_20231212\CorticalAreas\Output_state_vector
 LFP_file_path_24 = 'D:\Data_copy_Lukas_20231212\CorticalAreas\OutputSignals24h\';    % path to the folder where 24h LFP data is saved
 LFP_file_path_12 = 'D:\Data_copy_Lukas_20231212\CorticalAreas\OutputSignals12h\';    % path to the folder where 12h LFP data is saved
 
-pathout = 'Z:\Users\Natalie_Hauglund\001.Projects\001.Project_LFP_MA_analysis\CorticalAreas\Output_MA_analysis\PSD';
-
+pathout = "output_path";
 
 arousal_window_size = 50;   % number of seconds before and after the MA in seconds on the plot
 sampling_frq = 256;
 power_bands = {[0.5, 4], [4, 10], [12, 16], [16, 30], [60 80]};
 total_power_band = [0, 30];
 mousenames = mouse_info{:,1};
-
-% mousenames = {'Fa', 'Sp'};
 
 %loop through all animals in this category
 for n=1:size(mousenames,1)
@@ -168,21 +155,6 @@ for n=1:size(mousenames,1)
                                 end
                             end
                         end
-
-                        
-                        % 
-                        % if strcmp(data_time_of_interest, "before_EMG")
-                        %     from_index_EEG_frames = floor(arousal_onset_index_EEG_frames-index_window_EEG_frames);
-                        %     to_index_EEG_frames = floor(from_index_EEG_frames + 30*sampling_frq);
-                        % elseif strcmp(data_time_of_interest, "during_EMG_peak")
-                        %     from_index_EEG_frames = floor(arousal_onset_index_EEG_frames);
-                        %     to_index_EEG_frames = floor(from_index_EEG_frames + 2*sampling_frq);
-                        % elseif strcmp(data_time_of_interest, "post_EMG_peak")
-                        %     from_index_EEG_frames = floor(arousal_onset_index_EEG_frames + 5*sampling_frq);
-                        %     to_index_EEG_frames = floor(from_index_EEG_frames + 10*sampling_frq);
-                        % else
-                        %     "wrong data time"
-                        % end
 
                         if from_index_EEG_frames < 1 || to_index_EEG_frames > length(data_of_interest)
                             continue
