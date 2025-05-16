@@ -1,0 +1,8 @@
+function [wake_binary, nrem_binary, rem_binary, ma_binary] = import_state_vectors(animal, daylabel, hypno_file_path)
+
+hypno_info = load(append(hypno_file_path, 'state_vector_',animal,'_',daylabel,'.mat'));
+
+wake_binary = hypno_info.state_struct.wake_binary;
+nrem_binary = hypno_info.state_struct.nrem_binary;
+rem_binary = hypno_info.state_struct.rem_binary;
+ma_binary = hypno_info.state_struct.ma_binary;
